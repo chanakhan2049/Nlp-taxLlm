@@ -18,6 +18,8 @@ PDF/TXT -> Clean text -> Chunk + overlap -> BGE-M3 embedding
 - Embedding dimension: 1,024
 - Similarity: cosine similarity
 - Retrieval: `k = 5`
+- `document_year`: ปีที่เผยแพร่เอกสาร โดยอนุมานจากวันที่ในชื่อไฟล์
+- `tax_year`: ปีภาษีที่เอกสารยังใช้เป็นข้อมูลอ้างอิง (ปัจจุบันกำหนดเป็น 2568)
 
 ## ไฟล์สำคัญ
 
@@ -37,7 +39,8 @@ pip install -r requirements.txt
 
 ### 2. เตรียม Supabase
 
-1. รัน `supabase_schema.sql` ใน Supabase SQL Editor
+1. รัน `supabase_schema.sql` ใน Supabase SQL Editor (รันซ้ำได้เพื่อเพิ่ม
+   `document_year` ให้ฐานข้อมูลเดิม)
 2. คัดลอก `.env.example` เป็น `.env`
 3. ใส่ Project API URL และ service-role key
 
@@ -65,8 +68,25 @@ python .\batch_ingest.py "C:\path\to\tax-documents"
 เมื่อ upload เสร็จ สคริปต์จะทดสอบ retrieval ด้วยคำถามตัวอย่างและแสดง
 similarity score, ชื่อเอกสาร และเลขหน้า
 
+ควรรัน ingestion ใหม่หลังเปลี่ยน metadata เพื่อให้ชื่อเอกสาร ปีที่เผยแพร่
+ปีภาษีที่ยังใช้อ้างอิง และ embeddings สอดคล้องกันทั้งหมด
+
+### 4. ถามคำถามด้วย Ollama
+
+เปิด Ollama และดาวน์โหลดโมเดลก่อนใช้งานครั้งแรก:
+
+```powershell
+ollama pull qwen2.5:7b
+python .\ask.py "ผู้มีเงินได้เฉพาะเงินเดือนต้องยื่นแบบอะไร"
+```
+
+ค่า timeout เริ่มต้นคือ 10 วินาทีสำหรับการเชื่อมต่อ และ 300 วินาทีสำหรับ
+การรอคำตอบ หากโมเดลใช้เวลาโหลดนานสามารถตั้ง `OLLAMA_READ_TIMEOUT` ใน `.env`
+ให้สูงขึ้นได้
+
 ## หมายเหตุ
 
-- ชื่อไฟล์ที่มีวันที่ `DDMMYY` ใช้อนุมานปี พ.ศ. เช่น `241268` เป็นปี 2568
+- ชื่อไฟล์ที่มีวันที่ `DDMMYY` ใช้อนุมานปีที่เผยแพร่เอกสาร เช่น `241268`
+  หมายถึงเอกสารเผยแพร่ปี 2568 ไม่ใช่ปีภาษีที่เอกสารใช้ได้
 - PDF ต้องมีข้อความที่ extract ได้ หากเป็นไฟล์สแกนต้อง OCR ก่อน
 - ควรตรวจตัวเลขและตารางภาษีด้วยคนก่อนใช้เป็นฐานความรู้

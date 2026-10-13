@@ -16,13 +16,13 @@ from create_embeddings import (
 
 # Run `python batch_ingest.py` for ./data, or pass another folder as an argument.
 DATA_FOLDER = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data")
-DEFAULT_TAX_YEAR = 2568
+CURRENT_TAX_YEAR = 2568
 
 
-def get_tax_year(file_path):
-    """Infer the Buddhist year from a DDMMYY value in the filename."""
+def get_document_year(file_path):
+    """Infer the document's publication year from a DDMMYY filename value."""
     dates = re.findall(r"(?<!\d)(\d{6})(?!\d)", file_path.stem)
-    return 2500 + int(dates[-1][-2:]) if dates else DEFAULT_TAX_YEAR
+    return 2500 + int(dates[-1][-2:]) if dates else CURRENT_TAX_YEAR
 
 
 def get_document_type(file_path):
@@ -36,7 +36,7 @@ def get_document_type(file_path):
     return "tax_form_attachment"
 
 
-def get_title(file_path, tax_year):
+def get_title(file_path, document_year):
     """Create a readable title from common Revenue Department filenames."""
     names = {
         "ins90": "วิธีกรอกแบบ ภ.ง.ด.90",
@@ -51,10 +51,10 @@ def get_title(file_path, tax_year):
     lower_name = file_path.stem.lower()
     for keyword, title in names.items():
         if keyword in lower_name:
-            return f"{title} ปีภาษี {tax_year} ({file_path.name})"
+            return f"{title} (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
     if file_path.suffix.lower() == ".txt":
         return f"ประมวลรัษฎากร หมวดภาษีเงินได้ ({file_path.name})"
-    return f"เอกสารประกอบภาษี ปีภาษี {tax_year} ({file_path.name})"
+    return f"เอกสารประกอบภาษี (เผยแพร่ปี {document_year}; {file_path.name})"
 
 
 def main():
@@ -68,11 +68,18 @@ def main():
     supabase = connect_supabase()
 
     for file_path in files:
-        tax_year = get_tax_year(file_path)
+        document_year = get_document_year(file_path)
+        tax_year = CURRENT_TAX_YEAR
         document_type = get_document_type(file_path)
-        title = get_title(file_path, tax_year)
+        title = get_title(file_path, document_year)
 
-        chunks = create_chunks(file_path, title, tax_year, document_type)
+        chunks = create_chunks(
+            file_path,
+            title,
+            tax_year,
+            document_type,
+            document_year=document_year,
+        )
         chunks = add_embeddings(chunks, model)
         upload_document(
             supabase,
@@ -81,6 +88,7 @@ def main():
             tax_year,
             document_type,
             chunks,
+            document_year=document_year,
         )
         print(f"Uploaded {file_path.name}: {len(chunks)} chunks")
 
@@ -90,7 +98,7 @@ def main():
         supabase,
         model,
         question,
-        tax_year=2568,
+        tax_year=CURRENT_TAX_YEAR,
         k=5,
     )
 

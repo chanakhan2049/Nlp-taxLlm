@@ -5,6 +5,7 @@ create table if not exists public.documents (
     title text not null,
     source_url text not null default '',
     tax_year integer not null,
+    document_year integer not null,
     document_type text not null default 'tax_reference',
     source_file text not null,
     source_hash text not null unique,
@@ -12,6 +13,17 @@ create table if not exists public.documents (
     embedding_dimension integer not null,
     created_at timestamptz not null default now()
 );
+
+-- Migration for databases created before document year and applicability year
+-- were stored separately. Existing rows retain their former year until the
+-- source documents are re-ingested.
+alter table public.documents
+    add column if not exists document_year integer;
+update public.documents
+set document_year = tax_year
+where document_year is null;
+alter table public.documents
+    alter column document_year set not null;
 
 create table if not exists public.document_chunks (
     id bigint generated always as identity primary key,
@@ -27,6 +39,27 @@ create table if not exists public.document_chunks (
     created_at timestamptz not null default now()
 );
 
+-- These source documents remain applicable for the 2568 dataset even when
+-- they were published earlier. Preserve the original year separately, then
+-- make all existing records discoverable by the current-year filter.
+update public.documents
+set title = replace(
+        title,
+        'ปีภาษี ' || document_year,
+        'เอกสารเผยแพร่ปี ' || document_year
+    ),
+    tax_year = 2568;
+
+update public.document_chunks as dc
+set tax_year = 2568,
+    metadata = dc.metadata || jsonb_build_object(
+        'title', d.title,
+        'document_year', d.document_year,
+        'applicable_tax_year', 2568
+    )
+from public.documents as d
+where d.id = dc.document_id;
+
 create index if not exists document_chunks_document_id_idx
     on public.document_chunks(document_id);
 
@@ -37,7 +70,16 @@ create index if not exists document_chunks_embedding_hnsw_idx
     on public.document_chunks
     using hnsw (embedding extensions.vector_cosine_ops);
 
-create or replace function public.match_tax_chunks(
+-- PostgreSQL cannot change an existing function's returned columns with
+-- CREATE OR REPLACE, so remove the old four-argument version first.
+drop function if exists public.match_tax_chunks(
+    extensions.vector,
+    double precision,
+    integer,
+    integer
+);
+
+create function public.match_tax_chunks(
     query_embedding extensions.vector(1024),
     match_threshold double precision,
     match_count integer,
@@ -48,6 +90,8 @@ returns table (
     document_id bigint,
     title text,
     source_url text,
+    document_year integer,
+    tax_year integer,
     content text,
     page_start integer,
     page_end integer,
@@ -61,6 +105,8 @@ as $$
         dc.document_id,
         d.title,
         d.source_url,
+        d.document_year,
+        dc.tax_year,
         dc.content,
         dc.page_start,
         dc.page_end,

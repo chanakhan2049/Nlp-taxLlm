@@ -71,19 +71,30 @@ def split_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     return chunks
 
 
-def create_chunks(file_path, title, tax_year, document_type):
+def create_chunks(
+    file_path,
+    title,
+    tax_year,
+    document_type,
+    document_year=None,
+):
     """Create chunks and attach metadata used for citation and filtering."""
     chunks = []
+    document_year = document_year or tax_year
 
     for page in read_document(file_path):
         for page_chunk_index, content in enumerate(split_text(page["text"])):
             chunk_number = len(chunks)
             text_for_embedding = (
-                f"เอกสาร: {title}\nปีภาษี: {tax_year}\n"
+                f"เอกสาร: {title}\nปีที่เผยแพร่เอกสาร: {document_year}\n"
+                f"ใช้สำหรับปีภาษี: {tax_year}\n"
                 f"หน้า: {page['page']}\n{content}"
             )
             chunk_id = hashlib.sha256(
-                f"{title}|{tax_year}|{page['page']}|{page_chunk_index}|{content}".encode("utf-8")
+                (
+                    f"{title}|{document_year}|{tax_year}|{page['page']}|"
+                    f"{page_chunk_index}|{content}"
+                ).encode("utf-8")
             ).hexdigest()
 
             chunks.append(
@@ -98,6 +109,8 @@ def create_chunks(file_path, title, tax_year, document_type):
                     "metadata": {
                         "title": title,
                         "document_type": document_type,
+                        "document_year": document_year,
+                        "applicable_tax_year": tax_year,
                     },
                 }
             )
@@ -129,14 +142,24 @@ def connect_supabase():
     )
 
 
-def upload_document(client, file_path, title, tax_year, document_type, chunks):
+def upload_document(
+    client,
+    file_path,
+    title,
+    tax_year,
+    document_type,
+    chunks,
+    document_year=None,
+):
     """Upload one document and its chunks. Existing rows are updated."""
     file_path = Path(file_path)
+    document_year = document_year or tax_year
     source_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
     document = {
         "title": title,
         "source_url": "",
         "tax_year": tax_year,
+        "document_year": document_year,
         "document_type": document_type,
         "source_file": file_path.name,
         "source_hash": source_hash,
@@ -153,6 +176,12 @@ def upload_document(client, file_path, title, tax_year, document_type, chunks):
         .execute()
     )
     document_id = result.data["id"]
+
+    # A metadata change also changes chunk UIDs. Remove the previous version so
+    # re-ingestion cannot leave stale chunks with an obsolete applicability year.
+    client.table("document_chunks").delete().eq(
+        "document_id", document_id
+    ).execute()
 
     rows = []
     for chunk in chunks:
