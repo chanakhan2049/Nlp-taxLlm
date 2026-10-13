@@ -3,3 +3,4 @@ sentence-transformers>=3,<6
 numpy>=1.26,<3
 supabase>=2,<3
 python-dotenv>=1,<2
+ollama>=0.4,<1
