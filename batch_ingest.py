@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from create_embeddings import (
+    CorruptDocumentError,
     add_embeddings,
     connect_supabase,
     create_chunks,
@@ -38,6 +39,14 @@ def get_document_type(file_path):
 
 def get_title(file_path, document_year):
     """Create a readable title from common Revenue Department filenames."""
+    lower_name = file_path.stem.lower()
+    if lower_name.startswith("ly03") or "loryor03" in lower_name:
+        return f"แบบ ล.ย.03 (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
+    if lower_name.startswith("ly04-1"):
+        return f"เอกสารแนบแบบ ล.ย.04 (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
+    if lower_name.startswith("ly04"):
+        return f"แบบ ล.ย.04 (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
+
     names = {
         "ins90": "วิธีกรอกแบบ ภ.ง.ด.90",
         "ins91": "วิธีกรอกแบบ ภ.ง.ด.91",
@@ -48,7 +57,6 @@ def get_title(file_path, document_year):
         "pit94": "แบบ ภ.ง.ด.94",
         "pit95": "แบบ ภ.ง.ด.95",
     }
-    lower_name = file_path.stem.lower()
     for keyword, title in names.items():
         if keyword in lower_name:
             return f"{title} (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
@@ -73,13 +81,17 @@ def main():
         document_type = get_document_type(file_path)
         title = get_title(file_path, document_year)
 
-        chunks = create_chunks(
-            file_path,
-            title,
-            tax_year,
-            document_type,
-            document_year=document_year,
-        )
+        try:
+            chunks = create_chunks(
+                file_path,
+                title,
+                tax_year,
+                document_type,
+                document_year=document_year,
+            )
+        except CorruptDocumentError as error:
+            print(f"Skipped {file_path.name}: {error}")
+            continue
         chunks = add_embeddings(chunks, model)
         upload_document(
             supabase,

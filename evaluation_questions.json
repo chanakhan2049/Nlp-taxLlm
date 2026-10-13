@@ -1,0 +1,103 @@
+[
+  {
+    "id": "salary-form",
+    "question": "ถ้ามีรายได้จากเงินเดือนอย่างเดียว ต้องยื่นแบบอะไร",
+    "expected_source_terms": ["ภ.ง.ด.91"]
+  },
+  {
+    "id": "mixed-income-form",
+    "question": "มีทั้งเงินเดือนและรายได้ประเภทอื่น ต้องยื่นแบบ ภ.ง.ด.90 หรือ ภ.ง.ด.91",
+    "expected_source_terms": ["ภ.ง.ด.90"]
+  },
+  {
+    "id": "midyear-form",
+    "question": "เงินได้ครึ่งปีต้องใช้แบบ ภ.ง.ด.94 อย่างไร",
+    "expected_source_terms": ["ภ.ง.ด.94"]
+  },
+  {
+    "id": "early-filing-form",
+    "question": "แบบ ภ.ง.ด.93 ใช้ในกรณีใด",
+    "expected_source_terms": ["ภ.ง.ด.93"]
+  },
+  {
+    "id": "child-deduction",
+    "question": "ค่าลดหย่อนบุตรต่อคนมีจำนวนเท่าไร",
+    "expected_source_terms": ["บุตร"]
+  },
+  {
+    "id": "second-child-deduction",
+    "question": "บุตรตั้งแต่คนที่สองซึ่งเกิดตั้งแต่ปี 2561 ลดหย่อนได้เท่าไร",
+    "expected_source_terms": ["บุตร"]
+  },
+  {
+    "id": "parent-support",
+    "question": "การลดหย่อนค่าอุปการะเลี้ยงดูบิดามารดาต้องใช้เอกสารอะไร",
+    "expected_source_terms": ["ล.ย.03", "บิดามารดา"]
+  },
+  {
+    "id": "disabled-dependent",
+    "question": "การใช้สิทธิลดหย่อนผู้พิการหรือคนทุพพลภาพต้องมีหลักฐานอะไร",
+    "expected_source_terms": ["ล.ย.04", "คนทุพพลภาพ"]
+  },
+  {
+    "id": "parent-health-insurance",
+    "question": "เบี้ยประกันสุขภาพบิดามารดานำมาลดหย่อนได้หรือไม่",
+    "expected_source_terms": ["เบี้ยประกันสุขภาพ", "บิดามารดา"]
+  },
+  {
+    "id": "social-security",
+    "question": "เงินสมทบกองทุนประกันสังคมใช้ลดหย่อนภาษีได้หรือไม่",
+    "expected_source_terms": ["ประกันสังคม"]
+  },
+  {
+    "id": "home-loan-interest",
+    "question": "ดอกเบี้ยเงินกู้เพื่อซื้อหรือสร้างที่อยู่อาศัยลดหย่อนได้หรือไม่",
+    "expected_source_terms": ["ดอกเบี้ยเงินกู้"]
+  },
+  {
+    "id": "rmf",
+    "question": "ค่าซื้อหน่วยลงทุน RMF ใช้ลดหย่อนอย่างไร",
+    "expected_source_terms": ["RMF", "กองทุนรวมเพื่อการเลี้ยงชีพ"]
+  },
+  {
+    "id": "ssf",
+    "question": "ค่าซื้อหน่วยลงทุน SSF ใช้ลดหย่อนอย่างไร",
+    "expected_source_terms": ["SSF", "กองทุนรวมเพื่อการออม"]
+  },
+  {
+    "id": "donation",
+    "question": "เงินบริจาคนำมาหักลดหย่อนภาษีได้อย่างไร",
+    "expected_source_terms": ["เงินบริจาค"]
+  },
+  {
+    "id": "foreign-income",
+    "question": "เงินได้จากต่างประเทศต้องนำมาคำนวณภาษีอย่างไร",
+    "expected_source_terms": ["ต่างประเทศ"]
+  },
+  {
+    "id": "age-65",
+    "question": "ผู้มีเงินได้อายุ 65 ปีขึ้นไปมีสิทธิยกเว้นเงินได้อย่างไร",
+    "expected_source_terms": ["65 ปี"]
+  },
+  {
+    "id": "tax-rate",
+    "question": "อัตราภาษีเงินได้บุคคลธรรมดาคำนวณอย่างไร",
+    "expected_source_terms": ["อัตราภาษี"]
+  },
+  {
+    "id": "filing-deadline",
+    "question": "กำหนดเวลายื่นแบบภาษีเงินได้บุคคลธรรมดาคือเมื่อไร",
+    "expected_source_terms": ["กำหนดเวลา", "ยื่นแบบ"]
+  },
+  {
+    "id": "publication-year",
+    "question": "แบบ ล.ย.03 ฉบับเก่าเผยแพร่ปีใด และยังใช้อ้างอิงสำหรับปีภาษี 2568 หรือไม่",
+    "expected_source_terms": ["เผยแพร่ปี 2560"]
+  },
+  {
+    "id": "out-of-scope",
+    "question": "บริษัทจำกัดต้องคำนวณภาษีมูลค่าเพิ่มรายเดือนอย่างไร",
+    "expected_source_terms": [],
+    "expect_no_answer": true
+  }
+]

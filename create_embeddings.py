@@ -17,6 +17,27 @@ from supabase import create_client
 MODEL_NAME = "BAAI/bge-m3"
 CHUNK_SIZE = 1800
 CHUNK_OVERLAP = 300
+RETRIEVAL_CANDIDATES = 50
+OUT_OF_SCOPE_MARKERS = (
+    "บริษัทจำกัด",
+    "ภาษีเงินได้นิติบุคคล",
+    "ห้างหุ้นส่วนจำกัด",
+    "ภ.พ.30",
+    "ภ.พ.36",
+)
+
+
+class CorruptDocumentError(ValueError):
+    """Raised when extracted PDF text is unusable without OCR."""
+
+
+def has_corrupt_pdf_text(text):
+    """Detect common broken custom-font extraction that requires OCR."""
+    if not text:
+        return False
+    control_count = sum("\x80" <= character <= "\x9f" for character in text)
+    mojibake_markers = sum(text.count(marker) for marker in ("", "", "", ""))
+    return control_count >= 3 or mojibake_markers >= 8
 
 
 def clean_text(text):
@@ -43,6 +64,11 @@ def read_document(file_path):
             text = "\n".join(block[4] for block in blocks)
             text = clean_text(text)
             pages.append({"page": page_number, "text": text})
+    combined_text = "\n".join(page["text"] for page in pages)
+    if has_corrupt_pdf_text(combined_text):
+        raise CorruptDocumentError(
+            f"Corrupted text extraction in {file_path.name}; OCR this PDF before ingestion."
+        )
     return pages
 
 
@@ -133,6 +159,44 @@ def add_embeddings(chunks, model):
     return chunks
 
 
+def _character_overlap(question, chunk):
+    """Return a Thai-friendly lexical score without requiring a tokenizer."""
+    normalize = lambda value: re.sub(r"[^\wก-๙]", "", value.lower())
+    query = normalize(question)
+    text = normalize(f"{chunk.get('title', '')} {chunk.get('content', '')}")
+    if len(query) < 3 or len(text) < 3:
+        return 0.0
+    query_grams = {query[index : index + 3] for index in range(len(query) - 2)}
+    text_grams = {text[index : index + 3] for index in range(len(text) - 2)}
+    return len(query_grams & text_grams) / len(query_grams)
+
+
+def _distinctive_term_overlap(question, chunk):
+    """Boost explicit form names and Latin fund abbreviations in a question."""
+    terms = re.findall(
+        r"[A-Za-z]{2,}|[ก-๙](?:\s*\.\s*[ก-๙])+\s*\.\s*\d+", question
+    )
+    if not terms:
+        return 0.0
+    text = f"{chunk.get('title', '')} {chunk.get('content', '')}".lower()
+    normalize = lambda value: re.sub(r"\s+", "", value.lower())
+    normalized_text = normalize(text)
+    return sum(normalize(term) in normalized_text for term in terms) / len(terms)
+
+
+def _year_intent_bonus(question, chunk):
+    """Prefer the requested historical or current version of a document."""
+    document_year = chunk.get("document_year")
+    tax_year = chunk.get("tax_year")
+    if not document_year or not tax_year:
+        return 0.0
+    if any(term in question for term in ("ฉบับเก่า", "เอกสารเก่า", "เดิม")):
+        return 0.35 if document_year < tax_year else 0.0
+    if any(term in question for term in ("ฉบับล่าสุด", "เอกสารล่าสุด", "ปัจจุบัน")):
+        return 0.20 if document_year == tax_year else 0.0
+    return 0.0
+
+
 def connect_supabase():
     """Connect using SUPABASE_URL and SUPABASE_SERVICE_KEY from .env."""
     load_dotenv()
@@ -206,18 +270,32 @@ def upload_document(
 
 
 def search_similar_chunks(client, model, question, tax_year=2568, k=5):
-    """Retrieve the k most similar chunks from Supabase."""
+    """Retrieve and hybrid-rerank chunks for the personal-income-tax corpus."""
+    if any(marker in question for marker in OUT_OF_SCOPE_MARKERS):
+        return []
+
     query_vector = model.encode(question, normalize_embeddings=True).tolist()
+    candidate_count = max(k, RETRIEVAL_CANDIDATES)
     result = client.rpc(
         "match_tax_chunks",
         {
             "query_embedding": query_vector,
             "match_threshold": 0.30,
-            "match_count": k,
+            "match_count": candidate_count,
             "filter_tax_year": tax_year,
         },
     ).execute()
-    return result.data
+    candidates = result.data
+    candidates.sort(
+        key=lambda chunk: (
+            chunk["similarity"]
+            + 0.35 * _character_overlap(question, chunk)
+            + 0.50 * _distinctive_term_overlap(question, chunk)
+            + _year_intent_bonus(question, chunk)
+        ),
+        reverse=True,
+    )
+    return candidates[:k]
 
 
 def load_embedding_model():

@@ -114,6 +114,7 @@ as $$
     from public.document_chunks dc
     join public.documents d on d.id = dc.document_id
     where dc.tax_year = filter_tax_year
+      and coalesce(dc.metadata->>'text_quality', 'ok') <> 'corrupt'
       and 1 - (dc.embedding <=> query_embedding) >= match_threshold
     order by dc.embedding <=> query_embedding
     limit least(match_count, 50);
