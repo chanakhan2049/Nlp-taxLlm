@@ -163,6 +163,7 @@ venv.bak/
 output/*.jsonl
 data/*.pdf
 data/*.txt
+data/*.md
 
 # Spyder project settings
 .spyderproject

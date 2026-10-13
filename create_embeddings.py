@@ -53,7 +53,7 @@ def read_document(file_path):
     """Read a PDF page by page, or read a TXT file as one page."""
     file_path = Path(file_path)
 
-    if file_path.suffix.lower() == ".txt":
+    if file_path.suffix.lower() in {".txt", ".md"}:
         text = file_path.read_text(encoding="utf-8-sig")
         return [{"page": 1, "text": clean_text(text)}]
 

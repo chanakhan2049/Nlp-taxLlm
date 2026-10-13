@@ -28,8 +28,8 @@ def get_document_year(file_path):
 
 def get_document_type(file_path):
     name = file_path.stem.lower()
-    if file_path.suffix.lower() == ".txt":
-        return "revenue_code"
+    if file_path.suffix.lower() in {".txt", ".md"}:
+        return "tax_guidance"
     if name.startswith("ins"):
         return "tax_form_instruction"
     if "pit" in name:
@@ -60,16 +60,20 @@ def get_title(file_path, document_year):
     for keyword, title in names.items():
         if keyword in lower_name:
             return f"{title} (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
-    if file_path.suffix.lower() == ".txt":
-        return f"ประมวลรัษฎากร หมวดภาษีเงินได้ ({file_path.name})"
+    if file_path.suffix.lower() in {".txt", ".md"}:
+        return f"{file_path.stem} (เอกสารเผยแพร่ปี {document_year}; {file_path.name})"
     return f"เอกสารประกอบภาษี (เผยแพร่ปี {document_year}; {file_path.name})"
 
 
 def main():
+    # Keep Thai filenames readable in Windows PowerShell.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     files = sorted(
         file_path
         for file_path in DATA_FOLDER.iterdir()
-        if file_path.suffix.lower() in {".pdf", ".txt"}
+        if file_path.suffix.lower() in {".pdf", ".txt", ".md"}
     )
 
     model = load_embedding_model()
