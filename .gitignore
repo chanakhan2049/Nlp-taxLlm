@@ -159,6 +159,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# Generated embeddings and local source documents
+output/*.jsonl
+data/*.pdf
+data/*.txt
+
 # Spyder project settings
 .spyderproject
 .spyproject
