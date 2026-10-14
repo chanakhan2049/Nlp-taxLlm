@@ -120,6 +120,23 @@ class AskTests(unittest.TestCase):
 
         self.assertEqual(answer, "ข้อแรก และข้อสอง")
 
+    def test_only_two_sources_are_displayed(self):
+        chunks = [
+            {**SAMPLE_CHUNK, "title": f"เอกสาร {number}"}
+            for number in range(1, 4)
+        ]
+
+        with patch("builtins.print") as output:
+            ask.print_sources(chunks)
+
+        rendered = "\n".join(
+            " ".join(str(value) for value in call.args)
+            for call in output.call_args_list
+        )
+        self.assertIn("เอกสาร 1", rendered)
+        self.assertIn("เอกสาร 2", rendered)
+        self.assertNotIn("เอกสาร 3", rendered)
+
     @patch("ask.make_client")
     def test_client_is_closed_when_chat_fails(self, make_client):
         client = make_client.return_value

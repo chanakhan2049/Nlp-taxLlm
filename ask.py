@@ -39,6 +39,7 @@ load_dotenv()
 
 DEFAULT_TAX_YEAR = 2568
 TOP_K = 5
+DISPLAY_SOURCE_LIMIT = 2
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 300.0
 DEFAULT_WRITE_TIMEOUT = 30.0
@@ -214,7 +215,7 @@ def strip_citation_markers(answer):
 
 def print_sources(chunks):
     print("\nแหล่งอ้างอิง:")
-    for number, chunk in enumerate(chunks, start=1):
+    for number, chunk in enumerate(chunks[:DISPLAY_SOURCE_LIMIT], start=1):
         document_year = chunk.get("document_year")
         year_note = f" | เผยแพร่ปี {document_year}" if document_year else ""
         print(
