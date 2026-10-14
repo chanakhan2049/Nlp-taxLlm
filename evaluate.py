@@ -65,13 +65,11 @@ def main():
         )
         retrieval_ok = retrieval_passes(case, chunks)
         answer = None
-        citation_ok = None
         if args.with_llm:
             answer = generate_answer(case["question"], chunks, stream=False) if chunks else NOT_FOUND
-            citation_ok = case.get("expect_no_answer", False) or "[" in answer
 
-        passed += retrieval_ok and (citation_ok is not False)
-        status = "PASS" if retrieval_ok and citation_ok is not False else "FAIL"
+        passed += retrieval_ok
+        status = "PASS" if retrieval_ok else "FAIL"
         print(f"{status} {case['id']}: {case['question']}")
         if not retrieval_ok:
             for chunk in chunks[:3]:

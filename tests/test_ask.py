@@ -95,7 +95,7 @@ class AskTests(unittest.TestCase):
 
         answer = ask.generate_answer("คำถาม", [SAMPLE_CHUNK], stream=False)
 
-        self.assertEqual(answer, "คำตอบ [1]")
+        self.assertEqual(answer, "คำตอบ")
         self.assertEqual(client.chat.call_args.kwargs["options"]["temperature"], 0.7)
         client.close.assert_called_once_with()
 
@@ -114,6 +114,11 @@ class AskTests(unittest.TestCase):
 
         self.assertEqual(answer, "คำตอบ")
         client.close.assert_called_once_with()
+
+    def test_all_citation_marker_forms_are_removed(self):
+        answer = ask.strip_citation_markers("ข้อแรก [1] และข้อสอง [2, 3] [4-5]")
+
+        self.assertEqual(answer, "ข้อแรก และข้อสอง")
 
     @patch("ask.make_client")
     def test_client_is_closed_when_chat_fails(self, make_client):

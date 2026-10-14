@@ -1,7 +1,13 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
-from create_embeddings import has_corrupt_pdf_text, search_similar_chunks
+from create_embeddings import (
+    has_corrupt_pdf_text,
+    search_similar_chunks,
+    upload_document,
+)
 
 
 class ExtractionQualityTests(unittest.TestCase):
@@ -72,6 +78,71 @@ class RetrievalTests(unittest.TestCase):
         )
 
         self.assertEqual(result[0]["document_year"], 2560)
+
+
+class UploadTests(unittest.TestCase):
+    def test_reingestion_upserts_before_deleting_only_stale_chunks(self):
+        client = MagicMock()
+        document_upsert = MagicMock()
+        document_select = MagicMock()
+        chunk_select = MagicMock()
+        chunk_upsert = MagicMock()
+        chunk_delete = MagicMock()
+        client.table.side_effect = [
+            document_upsert,
+            document_select,
+            chunk_select,
+            chunk_upsert,
+            chunk_delete,
+        ]
+        document_select.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+            "id": 32
+        }
+        chunk_select.select.return_value.eq.return_value.execute.return_value.data = [
+            {"chunk_uid": "unchanged"},
+            {"chunk_uid": "stale"},
+        ]
+        chunks = [
+            {
+                "chunk_uid": "unchanged",
+                "chunk_index": 0,
+                "content": "เนื้อหา",
+                "page_start": 1,
+                "page_end": 1,
+                "tax_year": 2568,
+                "metadata": {},
+                "embedding": [0.1],
+            }
+        ]
+
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            source = Path(directory) / "source.txt"
+            source.write_text("เนื้อหา", encoding="utf-8")
+            upload_document(
+                client,
+                source,
+                "เอกสาร",
+                2568,
+                "tax_guidance",
+                chunks,
+            )
+
+        uploaded_rows = chunk_upsert.upsert.call_args.args[0]
+        self.assertEqual(uploaded_rows[0]["document_id"], 32)
+        self.assertEqual(uploaded_rows[0]["chunk_uid"], "unchanged")
+        chunk_delete.delete.return_value.in_.assert_called_once_with(
+            "chunk_uid", ["stale"]
+        )
+        self.assertEqual(
+            [call.args[0] for call in client.table.call_args_list],
+            [
+                "documents",
+                "documents",
+                "document_chunks",
+                "document_chunks",
+                "document_chunks",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -103,7 +103,7 @@ python .\ask.py "ผู้มีเงินได้เฉพาะเงิน
 python .\evaluate.py
 ```
 
-รวมการสร้างคำตอบและตรวจว่ามี citation:
+รวมการสร้างคำตอบโดยไม่แสดงหมายเลขอ้างอิงในวงเล็บเหลี่ยม:
 
 ```powershell
 python .\evaluate.py --with-llm

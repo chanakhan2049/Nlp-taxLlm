@@ -22,6 +22,7 @@ Two ways to run the model (set in .env or shell):
 """
 
 import os
+import re
 import sys
 
 import httpx
@@ -53,7 +54,7 @@ SYSTEM_PROMPT = """คุณเป็นผู้ช่วยตอบคำถ�
 
 กติกา:
 1. ตอบจาก "เอกสารอ้างอิง" ที่ให้มาเท่านั้น ห้ามใช้ความรู้นอกเอกสารหรือเดาเพิ่ม
-2. อ้างอิงแหล่งที่มาท้ายประโยคที่ใช้ข้อมูลนั้น ในรูปแบบ [1], [2] ตามหมายเลขเอกสาร
+2. ใช้ข้อมูลจากเอกสารอ้างอิงโดยไม่ต้องใส่หมายเลขอ้างอิง เช่น [1] หรือ [2] ในคำตอบ
 3. ถ้าเอกสารอ้างอิงไม่มีข้อมูลเพียงพอ ให้ตอบตรง ๆ ว่าไม่พบข้อมูลในเอกสาร อย่าพยายามตอบ
 4. ตัวเลข อัตราภาษี และวันที่ ให้คัดลอกตามเอกสารอย่างระมัดระวัง
 5. แยก "ปีที่เผยแพร่เอกสาร" ออกจาก "ปีภาษีที่ยังใช้อ้างอิง" ให้ชัดเจน เอกสารเก่าอาจยังใช้กับปีภาษีปัจจุบันได้
@@ -114,7 +115,7 @@ def get_ollama_timeout():
 
 
 def format_context(chunks):
-    """Number each chunk so the model can cite it as [n]."""
+    """Separate chunks clearly without asking the model to emit citations."""
     blocks = []
     for number, chunk in enumerate(chunks, start=1):
         pages = (
@@ -131,7 +132,7 @@ def format_context(chunks):
             else f"ใช้เป็นข้อมูลอ้างอิงสำหรับปีภาษี {tax_year}"
         )
         blocks.append(
-            f"[{number}] {chunk['title']} ({pages}; {year_note})\n"
+            f"เอกสารอ้างอิงที่ {number}: {chunk['title']} ({pages}; {year_note})\n"
             f"{chunk['content']}"
         )
     return "\n\n---\n\n".join(blocks)
@@ -141,7 +142,7 @@ def build_messages(question, chunks):
     user_prompt = (
         f"เอกสารอ้างอิง:\n\n{format_context(chunks)}\n\n"
         f"คำถาม: {question}\n\n"
-        "คำตอบ (พร้อมอ้างอิง [n]):"
+        "คำตอบ (ไม่ต้องใส่หมายเลขอ้างอิงในวงเล็บเหลี่ยม):"
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -189,19 +190,24 @@ def generate_answer(question, chunks, stream=True):
     try:
         if not stream:
             response = client.chat(model=model_name, messages=messages, options=options)
-            return response["message"]["content"]
+            return strip_citation_markers(response["message"]["content"])
 
         parts = []
         for part in client.chat(
             model=model_name, messages=messages, options=options, stream=True
         ):
-            text = part["message"]["content"]
-            print(text, end="", flush=True)
-            parts.append(text)
-        print()
-        return "".join(parts)
+            parts.append(part["message"]["content"])
+        answer = strip_citation_markers("".join(parts))
+        print(answer)
+        return answer
     finally:
         client.close()
+
+
+def strip_citation_markers(answer):
+    """Remove bracketed source numbers that should not appear in user answers."""
+    answer = re.sub(r"\s*\[\d+(?:\s*[-,]\s*\d+)*\]", "", answer)
+    return re.sub(r" +([.,!?;:])", r"\1", answer).strip()
 
 
 def print_sources(chunks):
@@ -210,7 +216,7 @@ def print_sources(chunks):
         document_year = chunk.get("document_year")
         year_note = f" | เผยแพร่ปี {document_year}" if document_year else ""
         print(
-            f"  [{number}] {chunk['title']} | หน้า {chunk['page_start']} "
+            f"  {number}. {chunk['title']} | หน้า {chunk['page_start']} "
             f"| similarity {chunk['similarity']:.3f}{year_note}"
         )
 

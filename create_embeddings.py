@@ -241,11 +241,17 @@ def upload_document(
     )
     document_id = result.data["id"]
 
-    # A metadata change also changes chunk UIDs. Remove the previous version so
-    # re-ingestion cannot leave stale chunks with an obsolete applicability year.
-    client.table("document_chunks").delete().eq(
-        "document_id", document_id
-    ).execute()
+    # Keep unchanged chunk rows (and their numeric IDs) stable across re-ingestion.
+    # Stale rows are removed only after the current rows have been upserted, so a
+    # failed upload cannot erase the document's previously working chunks.
+    existing_rows = (
+        client.table("document_chunks")
+        .select("chunk_uid")
+        .eq("document_id", document_id)
+        .execute()
+        .data
+    )
+    existing_uids = {row["chunk_uid"] for row in existing_rows}
 
     rows = []
     for chunk in chunks:
@@ -266,6 +272,13 @@ def upload_document(
     for start in range(0, len(rows), 50):
         client.table("document_chunks").upsert(
             rows[start : start + 50], on_conflict="chunk_uid"
+        ).execute()
+
+    current_uids = {row["chunk_uid"] for row in rows}
+    stale_uids = sorted(existing_uids - current_uids)
+    for start in range(0, len(stale_uids), 50):
+        client.table("document_chunks").delete().in_(
+            "chunk_uid", stale_uids[start : start + 50]
         ).execute()
 
 
