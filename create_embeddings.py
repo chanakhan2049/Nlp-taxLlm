@@ -6,6 +6,7 @@ Pipeline: read documents -> create chunks -> create embeddings -> Supabase.
 import hashlib
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 import pymupdf
@@ -25,6 +26,18 @@ OUT_OF_SCOPE_MARKERS = (
     "ภ.พ.30",
     "ภ.พ.36",
 )
+INVISIBLE_CHARACTERS = str.maketrans(
+    "",
+    "",
+    "\u200b\u200c\u200d\u2060\ufeff",
+)
+SPACE_CHARACTERS = str.maketrans(
+    {
+        "\u00a0": " ",  # non-breaking space
+        "\u202f": " ",  # narrow non-breaking space
+        "\u3000": " ",  # ideographic space
+    }
+)
 
 
 class CorruptDocumentError(ValueError):
@@ -37,12 +50,19 @@ def has_corrupt_pdf_text(text):
         return False
     control_count = sum("\x80" <= character <= "\x9f" for character in text)
     mojibake_markers = sum(text.count(marker) for marker in ("", "", "", ""))
-    return control_count >= 3 or mojibake_markers >= 8
+    replacement_count = text.count("\ufffd")
+    return (
+        control_count >= 3
+        or mojibake_markers >= 8
+        or replacement_count >= 2
+    )
 
 
 def clean_text(text):
-    """Remove unnecessary whitespace from extracted text."""
-    text = text.replace("\u00a0", " ").replace("\u200b", "")
+    """Normalize extracted Unicode text without changing tax values or wording."""
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.translate(SPACE_CHARACTERS).translate(INVISIBLE_CHARACTERS)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -58,16 +78,31 @@ def read_document(file_path):
         return [{"page": 1, "text": clean_text(text)}]
 
     pages = []
+    raw_pages = []
+    image_only_pages = []
     with pymupdf.open(file_path) as pdf:
         for page_number, page in enumerate(pdf, start=1):
             blocks = page.get_text("blocks", sort=True)
-            text = "\n".join(block[4] for block in blocks)
-            text = clean_text(text)
-            pages.append({"page": page_number, "text": text})
-    combined_text = "\n".join(page["text"] for page in pages)
-    if has_corrupt_pdf_text(combined_text):
+            raw_text = "\n".join(block[4] for block in blocks)
+            raw_pages.append(raw_text)
+            if not raw_text.strip() and page.get_images(full=True):
+                image_only_pages.append(page_number)
+            pages.append({"page": page_number, "text": clean_text(raw_text)})
+
+    combined_raw_text = "\n".join(raw_pages)
+    if has_corrupt_pdf_text(combined_raw_text):
         raise CorruptDocumentError(
             f"Corrupted text extraction in {file_path.name}; OCR this PDF before ingestion."
+        )
+    if image_only_pages:
+        page_list = ", ".join(str(number) for number in image_only_pages)
+        raise CorruptDocumentError(
+            f"Image-only page(s) {page_list} in {file_path.name}; "
+            "OCR this PDF before ingestion."
+        )
+    if not any(page["text"] for page in pages):
+        raise CorruptDocumentError(
+            f"No extractable text in {file_path.name}; OCR this PDF before ingestion."
         )
     return pages
 

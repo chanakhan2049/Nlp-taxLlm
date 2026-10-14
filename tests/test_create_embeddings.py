@@ -4,7 +4,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from create_embeddings import (
+    CorruptDocumentError,
+    clean_text,
     has_corrupt_pdf_text,
+    read_document,
     search_similar_chunks,
     upload_document,
 )
@@ -18,6 +21,25 @@ class ExtractionQualityTests(unittest.TestCase):
         broken = "®´­º°¦´¦° ¸É°¥¼n ¼o¤¸Á·Åo \x85 \x85 \x85"
 
         self.assertTrue(has_corrupt_pdf_text(broken))
+
+    def test_replacement_characters_are_flagged(self):
+        self.assertTrue(has_corrupt_pdf_text("ภาษี\ufffdเงินได้\ufffdบุคคลธรรมดา"))
+
+    def test_clean_text_normalizes_unicode_and_pdf_whitespace(self):
+        dirty = "  ภาษี\u00a0เงินได้\u200b  \r\n\r\n\r\nบุคคลธรรมดา  "
+
+        self.assertEqual(clean_text(dirty), "ภาษี เงินได้\n\nบุคคลธรรมดา")
+
+    def test_empty_pdf_is_rejected_with_ocr_hint(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            source = Path(directory) / "empty.pdf"
+            document = __import__("pymupdf").open()
+            document.new_page()
+            document.save(source)
+            document.close()
+
+            with self.assertRaisesRegex(CorruptDocumentError, "OCR"):
+                read_document(source)
 
 
 class RetrievalTests(unittest.TestCase):
