@@ -14,7 +14,16 @@ class MarkdownIngestionTests(unittest.TestCase):
 
             pages = read_document(path)
 
-        self.assertEqual(pages, [{"page": 1, "text": "# หัวข้อ\n\nเนื้อหาภาษี"}])
+            self.assertEqual(
+                pages,
+                [
+                    {
+                        "page": 1,
+                        "text": "# หัวข้อ\n\nเนื้อหาภาษี",
+                        "extraction_method": "text",
+                    }
+                ],
+            )
 
     def test_text_guidance_uses_filename_as_title(self):
         path = Path("การขอคืนเงินภาษีอากร.txt")

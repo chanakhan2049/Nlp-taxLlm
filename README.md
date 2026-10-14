@@ -115,6 +115,8 @@ python .\evaluate.py --with-llm
   หมายถึงเอกสารเผยแพร่ปี 2568 ไม่ใช่ปีภาษีที่เอกสารใช้ได้
 - รองรับไฟล์ PDF, TXT และ Markdown (`.md`)
 - pipeline ทำ Unicode normalization และล้างช่องว่าง/อักขระล่องหนก่อนแบ่ง chunk
-- PDF ต้องมีข้อความที่ extract ได้ หากพบหน้าที่มีแต่ภาพหรือไม่มีข้อความจะข้ามไฟล์และแจ้งให้ OCR
-- pipeline จะข้าม PDF ที่ตรวจพบข้อความเสียจาก custom font หรือ replacement characters และแจ้งให้ OCR
+- PDF ที่เป็นภาพหรือมีข้อความเสียจาก custom font จะใช้ Tesseract OCR (`tha+eng`) อัตโนมัติ
+- ติดตั้ง Tesseract 5 ก่อน ingestion; บน Windows ใช้ `winget install UB-Mannheim.TesseractOCR`
+- หาก `tesseract` ไม่อยู่ใน PATH ให้กำหนด `TESSERACT_CMD` ใน `.env`
+- โมเดลภาษา OCR อยู่ใน `tessdata/` และ metadata ของแต่ละ chunk ระบุ `extraction_method`
 - ควรตรวจตัวเลขและตารางภาษีด้วยคนก่อนใช้เป็นฐานความรู้
