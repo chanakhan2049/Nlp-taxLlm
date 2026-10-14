@@ -71,6 +71,23 @@ class AskTests(unittest.TestCase):
         ):
             ask.get_model_name()
 
+    def test_default_temperature_allows_answer_variety(self):
+        self.assertEqual(ask.get_temperature(), 0.7)
+
+    def test_temperature_can_be_configured(self):
+        os.environ["OLLAMA_TEMPERATURE"] = "1.2"
+
+        self.assertEqual(ask.get_temperature(), 1.2)
+
+    def test_temperature_must_be_in_supported_range(self):
+        os.environ["OLLAMA_TEMPERATURE"] = "2.1"
+
+        with self.assertRaisesRegex(
+            ask.OllamaConfigurationError,
+            "OLLAMA_TEMPERATURE must be between 0 and 2",
+        ):
+            ask.get_temperature()
+
     @patch("ask.make_client")
     def test_non_streaming_answer_and_client_cleanup(self, make_client):
         client = make_client.return_value
@@ -79,6 +96,7 @@ class AskTests(unittest.TestCase):
         answer = ask.generate_answer("คำถาม", [SAMPLE_CHUNK], stream=False)
 
         self.assertEqual(answer, "คำตอบ [1]")
+        self.assertEqual(client.chat.call_args.kwargs["options"]["temperature"], 0.7)
         client.close.assert_called_once_with()
 
     @patch("ask.make_client")

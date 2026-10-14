@@ -16,6 +16,7 @@ Two ways to run the model (set in .env or shell):
 
   Either way:
     OLLAMA_NUM_CTX  context window, default 8192
+    OLLAMA_TEMPERATURE  answer variety from 0 to 2, default 0.7
     OLLAMA_CONNECT_TIMEOUT  connection timeout in seconds, default 10
     OLLAMA_READ_TIMEOUT     response timeout in seconds, default 300
 """
@@ -41,6 +42,7 @@ DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 300.0
 DEFAULT_WRITE_TIMEOUT = 30.0
 DEFAULT_POOL_TIMEOUT = 10.0
+DEFAULT_TEMPERATURE = 0.7
 
 NOT_FOUND = (
     "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสารที่มีอยู่ "
@@ -55,7 +57,10 @@ SYSTEM_PROMPT = """คุณเป็นผู้ช่วยตอบคำถ�
 3. ถ้าเอกสารอ้างอิงไม่มีข้อมูลเพียงพอ ให้ตอบตรง ๆ ว่าไม่พบข้อมูลในเอกสาร อย่าพยายามตอบ
 4. ตัวเลข อัตราภาษี และวันที่ ให้คัดลอกตามเอกสารอย่างระมัดระวัง
 5. แยก "ปีที่เผยแพร่เอกสาร" ออกจาก "ปีภาษีที่ยังใช้อ้างอิง" ให้ชัดเจน เอกสารเก่าอาจยังใช้กับปีภาษีปัจจุบันได้
-6. ตอบเป็นภาษาไทย กระชับ ชัดเจน"""
+6. ตอบเป็นภาษาไทย กระชับ ชัดเจน
+7. เลือกรูปแบบคำตอบให้เหมาะกับคำถาม เช่น ย่อหน้าสั้น รายการหัวข้อ ขั้นตอน หรือตาราง
+   และปรับถ้อยคำให้เป็นธรรมชาติ ไม่ต้องยึดประโยคเปิดหรือแม่แบบเดิมทุกครั้ง
+8. ห้ามเพิ่มความหลากหลายด้วยการเปลี่ยนข้อเท็จจริง ตัวเลข หรือแหล่งอ้างอิง"""
 
 
 class OllamaConfigurationError(ValueError):
@@ -74,6 +79,24 @@ def get_positive_number(name, default, number_type=float):
     if value <= 0:
         raise OllamaConfigurationError(
             f"{name} must be greater than zero; received {raw_value!r}."
+        )
+    return value
+
+
+def get_temperature():
+    """Read the sampling temperature used to vary answer wording and structure."""
+    raw_value = os.getenv("OLLAMA_TEMPERATURE", str(DEFAULT_TEMPERATURE))
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as error:
+        raise OllamaConfigurationError(
+            "OLLAMA_TEMPERATURE must be a number from 0 to 2; "
+            f"received {raw_value!r}."
+        ) from error
+    if not 0 <= value <= 2:
+        raise OllamaConfigurationError(
+            "OLLAMA_TEMPERATURE must be between 0 and 2; "
+            f"received {raw_value!r}."
         )
     return value
 
@@ -157,7 +180,7 @@ def generate_answer(question, chunks, stream=True):
     # Ollama's default context window is small and silently truncates the prompt.
     # Thai text is token-heavy, so 5 chunks of 1,800 characters need a larger window.
     options = {
-        "temperature": 0.1,
+        "temperature": get_temperature(),
         "num_ctx": get_positive_number("OLLAMA_NUM_CTX", 8192, int),
     }
     client = make_client()
