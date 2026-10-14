@@ -55,13 +55,23 @@ def has_corrupt_pdf_text(text):
     """Detect common broken custom-font extraction that requires OCR."""
     if not text:
         return False
+    visible_count = sum(not character.isspace() for character in text)
     control_count = sum("\x80" <= character <= "\x9f" for character in text)
     mojibake_markers = sum(text.count(marker) for marker in ("", "", "", ""))
     replacement_count = text.count("\ufffd")
+    # Some Thai custom fonts expose glyph codes as Latin Extended characters
+    # (for example, "ĔïĒî..." instead of Thai). Ordinary Thai/English
+    # documents contain very few characters in this range, while affected PDFs
+    # contain them throughout the extracted text.
+    latin_extended_count = sum(
+        "\u00c0" <= character <= "\u024f" for character in text
+    )
+    latin_extended_ratio = latin_extended_count / max(visible_count, 1)
     return (
         control_count >= 3
         or mojibake_markers >= 8
         or replacement_count >= 2
+        or (latin_extended_count >= 20 and latin_extended_ratio >= 0.10)
     )
 
 

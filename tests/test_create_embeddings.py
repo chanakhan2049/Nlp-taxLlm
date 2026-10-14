@@ -24,6 +24,11 @@ class ExtractionQualityTests(unittest.TestCase):
 
         self.assertTrue(has_corrupt_pdf_text(broken))
 
+    def test_latin_extended_thai_glyph_codes_are_flagged(self):
+        broken = "ĔïĒîïĒÿéÜøć÷úąđĂĊ÷éìĊěêĆĚÜ" * 4
+
+        self.assertTrue(has_corrupt_pdf_text(broken))
+
     def test_replacement_characters_are_flagged(self):
         self.assertTrue(has_corrupt_pdf_text("ภาษี\ufffdเงินได้\ufffdบุคคลธรรมดา"))
 

@@ -71,8 +71,8 @@ class AskTests(unittest.TestCase):
         ):
             ask.get_model_name()
 
-    def test_default_temperature_allows_answer_variety(self):
-        self.assertEqual(ask.get_temperature(), 0.7)
+    def test_default_temperature_balances_consistency_and_variety(self):
+        self.assertEqual(ask.get_temperature(), 0.5)
 
     def test_temperature_can_be_configured(self):
         os.environ["OLLAMA_TEMPERATURE"] = "1.2"
@@ -96,7 +96,7 @@ class AskTests(unittest.TestCase):
         answer = ask.generate_answer("คำถาม", [SAMPLE_CHUNK], stream=False)
 
         self.assertEqual(answer, "คำตอบ")
-        self.assertEqual(client.chat.call_args.kwargs["options"]["temperature"], 0.7)
+        self.assertEqual(client.chat.call_args.kwargs["options"]["temperature"], 0.5)
         client.close.assert_called_once_with()
 
     @patch("ask.make_client")
