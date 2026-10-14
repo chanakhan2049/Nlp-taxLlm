@@ -3,7 +3,6 @@ create extension if not exists vector with schema extensions;
 create table if not exists public.documents (
     id bigint generated always as identity primary key,
     title text not null,
-    source_url text not null default '',
     tax_year integer not null,
     document_year integer not null,
     document_type text not null default 'tax_reference',
@@ -89,7 +88,6 @@ returns table (
     id bigint,
     document_id bigint,
     title text,
-    source_url text,
     document_year integer,
     tax_year integer,
     content text,
@@ -104,7 +102,6 @@ as $$
         dc.id,
         dc.document_id,
         d.title,
-        d.source_url,
         d.document_year,
         dc.tax_year,
         dc.content,

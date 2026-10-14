@@ -1,10 +1,15 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pymupdf
 
 from create_embeddings import (
+    CorruptDocumentError,
+    clean_text,
     has_corrupt_pdf_text,
+    read_document,
     search_similar_chunks,
     upload_document,
 )
@@ -18,6 +23,48 @@ class ExtractionQualityTests(unittest.TestCase):
         broken = "®´­º°¦´¦° ¸É°¥¼n ¼o¤¸Á·Åo \x85 \x85 \x85"
 
         self.assertTrue(has_corrupt_pdf_text(broken))
+
+    def test_replacement_characters_are_flagged(self):
+        self.assertTrue(has_corrupt_pdf_text("ภาษี\ufffdเงินได้\ufffdบุคคลธรรมดา"))
+
+    def test_clean_text_normalizes_unicode_and_pdf_whitespace(self):
+        dirty = "  ภาษี\u00a0เงินได้\u200b  \r\n\r\n\r\nบุคคลธรรมดา  "
+
+        self.assertEqual(clean_text(dirty), "ภาษี เงินได้\n\nบุคคลธรรมดา")
+
+    def test_empty_pdf_is_rejected_with_ocr_hint(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            source = Path(directory) / "empty.pdf"
+            document = pymupdf.open()
+            document.new_page()
+            document.save(source)
+            document.close()
+
+            with patch("create_embeddings.ocr_pdf_page", return_value=""):
+                with self.assertRaisesRegex(CorruptDocumentError, "no text"):
+                    read_document(source)
+
+    def test_corrupt_pdf_uses_tesseract_fallback(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            source = Path(directory) / "corrupt.pdf"
+            document = pymupdf.open()
+            page = document.new_page()
+            page.insert_text((72, 72), "placeholder")
+            document.save(source)
+            document.close()
+
+            with (
+                patch("create_embeddings.has_corrupt_pdf_text", return_value=True),
+                patch(
+                    "create_embeddings.ocr_pdf_page",
+                    return_value="ข้อความจาก Tesseract",
+                ) as ocr,
+            ):
+                pages = read_document(source)
+
+            self.assertEqual(pages[0]["text"], "ข้อความจาก Tesseract")
+            self.assertEqual(pages[0]["extraction_method"], "tesseract_ocr")
+            ocr.assert_called_once()
 
 
 class RetrievalTests(unittest.TestCase):

@@ -6,6 +6,10 @@ Pipeline: read documents -> create chunks -> create embeddings -> Supabase.
 import hashlib
 import os
 import re
+import shutil
+import subprocess
+import tempfile
+import unicodedata
 from pathlib import Path
 
 import pymupdf
@@ -18,12 +22,28 @@ MODEL_NAME = "BAAI/bge-m3"
 CHUNK_SIZE = 1800
 CHUNK_OVERLAP = 300
 RETRIEVAL_CANDIDATES = 50
+OCR_DPI = 300
+OCR_LANGUAGES = "tha+eng"
+TESSDATA_DIR = Path(__file__).with_name("tessdata")
+OCR_TEMP_DIR = Path(__file__).with_name(".ocr-temp")
 OUT_OF_SCOPE_MARKERS = (
     "บริษัทจำกัด",
     "ภาษีเงินได้นิติบุคคล",
     "ห้างหุ้นส่วนจำกัด",
     "ภ.พ.30",
     "ภ.พ.36",
+)
+INVISIBLE_CHARACTERS = str.maketrans(
+    "",
+    "",
+    "\u200b\u200c\u200d\u2060\ufeff",
+)
+SPACE_CHARACTERS = str.maketrans(
+    {
+        "\u00a0": " ",  # non-breaking space
+        "\u202f": " ",  # narrow non-breaking space
+        "\u3000": " ",  # ideographic space
+    }
 )
 
 
@@ -37,16 +57,82 @@ def has_corrupt_pdf_text(text):
         return False
     control_count = sum("\x80" <= character <= "\x9f" for character in text)
     mojibake_markers = sum(text.count(marker) for marker in ("", "", "", ""))
-    return control_count >= 3 or mojibake_markers >= 8
+    replacement_count = text.count("\ufffd")
+    return (
+        control_count >= 3
+        or mojibake_markers >= 8
+        or replacement_count >= 2
+    )
 
 
 def clean_text(text):
-    """Remove unnecessary whitespace from extracted text."""
-    text = text.replace("\u00a0", " ").replace("\u200b", "")
+    """Normalize extracted Unicode text without changing tax values or wording."""
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.translate(SPACE_CHARACTERS).translate(INVISIBLE_CHARACTERS)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def find_tesseract():
+    """Locate Tesseract from configuration, PATH, or common Windows installs."""
+    configured = os.getenv("TESSERACT_CMD")
+    candidates = [
+        configured,
+        shutil.which("tesseract"),
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(Path(candidate))
+    raise CorruptDocumentError(
+        "Tesseract OCR is required but was not found. Install Tesseract 5 "
+        "or set TESSERACT_CMD in .env."
+    )
+
+
+def ocr_pdf_page(page):
+    """Render one PDF page and extract Thai/English text with Tesseract."""
+    if not all(
+        (TESSDATA_DIR / f"{language}.traineddata").is_file()
+        for language in OCR_LANGUAGES.split("+")
+    ):
+        raise CorruptDocumentError(
+            f"Missing Tesseract language data in {TESSDATA_DIR}."
+        )
+
+    pixmap = page.get_pixmap(dpi=OCR_DPI, alpha=False)
+    OCR_TEMP_DIR.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="page-", dir=OCR_TEMP_DIR) as directory:
+        image_path = Path(directory) / "page.png"
+        pixmap.save(image_path)
+        result = subprocess.run(
+            [
+                find_tesseract(),
+                str(image_path),
+                "stdout",
+                "--tessdata-dir",
+                str(TESSDATA_DIR),
+                "-l",
+                OCR_LANGUAGES,
+                "--psm",
+                "3",
+                "-c",
+                "preserve_interword_spaces=1",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    if result.returncode:
+        detail = result.stderr.strip() or "unknown Tesseract error"
+        raise CorruptDocumentError(f"Tesseract OCR failed: {detail}")
+    return clean_text(result.stdout)
 
 
 def read_document(file_path):
@@ -55,19 +141,47 @@ def read_document(file_path):
 
     if file_path.suffix.lower() in {".txt", ".md"}:
         text = file_path.read_text(encoding="utf-8-sig")
-        return [{"page": 1, "text": clean_text(text)}]
+        return [{"page": 1, "text": clean_text(text), "extraction_method": "text"}]
 
     pages = []
+    raw_pages = []
+    image_only_pages = []
     with pymupdf.open(file_path) as pdf:
         for page_number, page in enumerate(pdf, start=1):
             blocks = page.get_text("blocks", sort=True)
-            text = "\n".join(block[4] for block in blocks)
-            text = clean_text(text)
-            pages.append({"page": page_number, "text": text})
-    combined_text = "\n".join(page["text"] for page in pages)
-    if has_corrupt_pdf_text(combined_text):
+            raw_text = "\n".join(block[4] for block in blocks)
+            raw_pages.append(raw_text)
+            if not raw_text.strip() and page.get_images(full=True):
+                image_only_pages.append(page_number)
+            pages.append(
+                {
+                    "page": page_number,
+                    "text": clean_text(raw_text),
+                    "extraction_method": "embedded_text",
+                }
+            )
+
+        combined_raw_text = "\n".join(raw_pages)
+        if has_corrupt_pdf_text(combined_raw_text) or not any(
+            page["text"] for page in pages
+        ):
+            pages_to_ocr = set(range(1, len(pages) + 1))
+        else:
+            pages_to_ocr = set(image_only_pages)
+
+        for page_number in sorted(pages_to_ocr):
+            text = ocr_pdf_page(pdf[page_number - 1])
+            if not text:
+                raise CorruptDocumentError(
+                    f"Tesseract found no text on page {page_number} of "
+                    f"{file_path.name}."
+                )
+            pages[page_number - 1]["text"] = text
+            pages[page_number - 1]["extraction_method"] = "tesseract_ocr"
+
+    if not any(page["text"] for page in pages):
         raise CorruptDocumentError(
-            f"Corrupted text extraction in {file_path.name}; OCR this PDF before ingestion."
+            f"No extractable text in {file_path.name}, including after OCR."
         )
     return pages
 
@@ -137,6 +251,7 @@ def create_chunks(
                         "document_type": document_type,
                         "document_year": document_year,
                         "applicable_tax_year": tax_year,
+                        "extraction_method": page["extraction_method"],
                     },
                 }
             )
@@ -221,7 +336,6 @@ def upload_document(
     source_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
     document = {
         "title": title,
-        "source_url": "",
         "tax_year": tax_year,
         "document_year": document_year,
         "document_type": document_type,
@@ -312,4 +426,5 @@ def search_similar_chunks(client, model, question, tax_year=2568, k=5):
 
 
 def load_embedding_model():
+    load_dotenv()
     return SentenceTransformer(MODEL_NAME)
